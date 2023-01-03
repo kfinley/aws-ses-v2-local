@@ -3,15 +3,19 @@ import express from 'express';
 import path from 'path';
 import v1SendRawEmail from './v1/sendRawEmail';
 import v1SendEmail from './v1/sendEmail';
+import v1SendTemplatedEmail from './v1/sendTemplatedEmail';
 import v2SendEmail from './v2/sendEmail';
 import store from './store';
 
 export interface Config {
   port: number,
+  templatesPath?: string,
+  templatesDir?: string,
 }
 
 export const defaultConfig: Config = {
   port: 8005,
+  templatesDir: 'email-templates',
 };
 
 const server = (partialConfig: Partial<Config> = {}): Promise<Server> => {
@@ -69,8 +73,30 @@ const server = (partialConfig: Partial<Config> = {}): Promise<Server> => {
   });
 
   app.post('/', (req, res, next) => {
-    if (req.body.Action === 'SendEmail') v1SendEmail(req, res, next);
-    if (req.body.Action === 'SendRawEmail') v1SendRawEmail(req, res, next);
+    try {
+      switch (req.body.Action) {
+        case 'SendEmail':
+          v1SendEmail(req, res, next);
+          break;
+        case 'SendRawEmail':
+          v1SendRawEmail(req, res, next);
+          break;
+        case 'SendTemplatedEmail':
+          res.locals.templateDir = config.templatesDir;
+          res.locals.templatesPath = config.templatesPath;
+          v1SendTemplatedEmail(req, res, next);
+          break;
+        default:
+          console.log(`Endpoint ${req.body.Action} not supported. Consider making a PR to https://github.com/domdomegg/aws-ses-v2-local to add support.`);
+      }
+    } catch (e) {
+      console.log(`Error calling ${req.body.Action}`, e);
+      res.status(500).send(`<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>500</Code>
+  <Message>${e}</Message>
+</Error>`);
+    }
   });
 
   app.post('/v2/email/outbound-emails', v2SendEmail);
